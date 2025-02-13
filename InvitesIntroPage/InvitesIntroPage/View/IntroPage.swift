@@ -10,27 +10,98 @@ import SwiftUI
 
 struct IntroPage: View {
     @State private var activeCard: Card? = cards.first
+    @State private var scrollPosition: ScrollPosition = .init()
+    @State private var currentScrollOffset: CGFloat = 0
+    @State private var timer = Timer.publish(every: 0.01, on: .current, in: .default).autoconnect()
+    @State private var initialAnimation: Bool = false
+    @State private var titleProgress: CGFloat = 0
+    @State private var scrollPhase: ScrollPhase = .idle
     
     
     var body: some View {
         ZStack {
             AmbientBackground()
+                .animation(.easeIn(duration: 1), value: activeCard)
             
             VStack(spacing: 40) {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 10) {
-                        ForEach(cards) { card in
-                            CarouselCardView(card)
-                        }
+                InfiniteScrollView {
+                    ForEach(cards) { card in
+                        CarouselCardView(card)
                     }
                 }
+                .scrollIndicators(.hidden)
+                .scrollPosition($scrollPosition)
+                .scrollClipDisabled()
+                .containerRelativeFrame(.vertical) { value, _ in
+                    value * 0.5
+                }
+                .onScrollPhaseChange{ oldPhase, newPhase in
+                    scrollPhase = newPhase
+                }
+                .onScrollGeometryChange(for: CGFloat.self) {
+                    $0.contentOffset.x + $0.contentInsets.leading
+                } action: { oldValue, newValue in
+                    currentScrollOffset = newValue
+                    
+                    if scrollPhase != .decelerating || scrollPhase != .animating {
+                        let activeIndex = Int((currentScrollOffset / 200).rounded()) % cards.count
+                        activeCard = cards[activeIndex]
+                    }
+                }
+                .visualEffect { [initialAnimation] content, proxy in
+                    content
+                        .offset(y: !initialAnimation ? -(proxy.size.height + 200) : 0)
+                }
+
+                VStack(spacing: 4) {
+                    Text("Welcome to")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white.secondary)
+                        .blurOpacityEffect(initialAnimation)
+                    
+                    Text("Apple Invites")
+                        .font(.largeTitle.bold())
+                        .foregroundStyle(.white)
+                        .textRenderer(TitleTextRenderer(progress: titleProgress))
+                        .padding(.bottom, 12)
+                    
+                    Text("Create beautiful invitations for all your events. \nAnyone can receive invitations. Sending included\n iCloud+.")
+                        .font(.callout)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.secondary)
+                        .blurOpacityEffect(initialAnimation)
+                }
+                
+                Button {
+                    timer.upstream.connect().cancel()
+                } label: {
+                    Text("Create Event")
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 25)
+                        .padding(.vertical, 12)
+                        .background(.white, in: .capsule)
+                }
+                .blurOpacityEffect(initialAnimation)
+
             }
-            .scrollIndicators(.hidden)
-            .containerRelativeFrame(.vertical) { value, _ in
-                value * 0.5
+            .safeAreaPadding(15)
+        }
+        .onReceive(timer) { _ in
+            currentScrollOffset += 0.35
+            scrollPosition.scrollTo(x: currentScrollOffset)
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(0.35))
+            
+            withAnimation(.smooth(duration: 0.75, extraBounce: 0)) {
+                initialAnimation = true
+            }
+            
+            withAnimation(.smooth(duration: 2.5, extraBounce: 0).delay(0.3)) {
+                titleProgress = 1
             }
         }
-        .safeAreaPadding(15)
     }
     
     
@@ -83,4 +154,15 @@ struct IntroPage: View {
 
 #Preview {
     IntroPage()
+}
+
+
+
+extension View {
+    func blurOpacityEffect(_ show: Bool) -> some View {
+        self
+            .blur(radius: show ? 0 : 2)
+            .opacity(show ? 1 : 0)
+            .scaleEffect(show ? 1 : 0.9)
+    }
 }
